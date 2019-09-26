@@ -4,18 +4,25 @@ import ru.tinkoff.phobos.Namespace
 import ru.tinkoff.phobos.derivation.CompileTimeState.{ChainedImplicit, Stack}
 import ru.tinkoff.phobos.derivation.Derivation.DirectlyReentrantException
 import ru.tinkoff.phobos.derivation.auto.Exported
+import ru.tinkoff.phobos.encoding.ElementEncoder
 import ru.tinkoff.phobos.syntax.{attr, text, xmlns}
 
 import scala.reflect.macros.blackbox
+import scala.language.existentials
 
 private[phobos] abstract class Derivation(val c: blackbox.Context) {
   import c.universe._
 
   final case class CaseClassParam(localName: String, namespaceUri: Tree, paramType: Type, category: ParamCategory)
+  final case class SubClass(name: String, subClassType: Type, typeclass: Tree)
 
-  def searchType[T: c.WeakTypeTag]: Type
+  def codecType: Type
+
+  def searchType[T: c.WeakTypeTag]: Type = appliedType(codecType, c.weakTypeOf[T])
 
   def deriveProductCodec[T: c.WeakTypeTag](stack: Stack[c.type])(params: IndexedSeq[CaseClassParam]): Tree
+
+  def deriveCoproductCodec[T: c.WeakTypeTag](subClasses: Set[SubClass]): Tree
 
   def error(msg: String): Nothing = c.abort(c.enclosingPosition, msg)
 
@@ -78,7 +85,17 @@ private[phobos] abstract class Derivation(val c: blackbox.Context) {
 
     def inferCodec: Tree = {
       if (classSymbol.isSealed) {
-        error("E")
+        val subClasses = classSymbol.knownDirectSubclasses.map { sc =>
+          val subClassType  = sc.asType.toType
+          val searchSubType = appliedType(codecType, subClassType)
+          val typeclass = Option(c.inferImplicitValue(searchSubType))
+            .filter(_.nonEmpty)
+            .orElse(exportedTypecclass(searchSubType))
+            .getOrElse(error(s"Not found $searchSubType for subclass $subClassType of ${c.weakTypeOf[T]}"))
+          SubClass(sc.name.decodedName.toString, subClassType, typeclass)
+        }
+        deriveCoproductCodec(subClasses)
+//        error("E")
       } else if (classSymbol.isCaseClass) {
 
         def fetchGroup(param: TermSymbol): ParamCategory = {

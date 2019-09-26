@@ -71,8 +71,9 @@ class EncoderDerivationSuit extends WordSpec with Matchers {
 
       val qux = Qux("42", Foo(42, 12.2))
       val xml = XmlEncoder[Qux].encode(qux)
-      assert(xml ==
-        """
+      assert(
+        xml ==
+          """
           | <?xml version='1.0' encoding='UTF-8'?>
           | <qux>
           |   <str>constant</str>
@@ -210,66 +211,61 @@ class EncoderDerivationSuit extends WordSpec with Matchers {
           """.stripMargin.minimized)
     }
 
-    //    "encode sealed traits" in {
-    //      @ElementCodec
-    //      sealed trait Foo
-    //      object Foo {
-    //        @ElementCodec
-    //        case class Foo1(a: String) extends Foo
-    //        @ElementCodec
-    //        case class Foo2(b: Int) extends Foo
-    //        @ElementCodec
-    //        case class Foo3(c: Char) extends Foo
-    //      }
-    //      import Foo._
-    //      @ElementCodec
-    //      case class Bar(d: String, foo: Foo, e: Char)
-    //
-    //      val bar1       = Bar("d value", Foo1("string"), 'e')
-    //      val bar2       = Bar("d value", Foo2(1), 'e')
-    //      val bar3       = Bar("another one value", Foo3('c'), 'v')
-    //      val barEncoder = XmlEncoder.fromTagEncoder[Bar]("bar")
-    //      (for {
-    //        xml1 <- barEncoder.encode(bar1).firstL
-    //        xml2 <- barEncoder.encode(bar2).firstL
-    //        xml3 <- barEncoder.encode(bar3).firstL
-    //      } yield {
-    //        assert(
-    //          xml1 ==
-    //            """
-    //              | <?xml version='1.0' encoding='UTF-8'?>
-    //              | <bar>
-    //              |   <d>d value</d>
-    //              |   <foo>
-    //              |     <a>string</a>
-    //              |   </foo>
-    //              |   <e>e</e>
-    //              | </bar>
-    //            """.stripMargin.minimized &&
-    //            xml2 ==
-    //              """
-    //                | <?xml version='1.0' encoding='UTF-8'?>
-    //                | <bar>
-    //                |   <d>d value</d>
-    //                |   <foo>
-    //                |     <b>1</b>
-    //                |   </foo>
-    //                |   <e>e</e>
-    //                | </bar>
-    //              """.stripMargin.minimized &&
-    //            xml3 ==
-    //              """
-    //                | <?xml version='1.0' encoding='UTF-8'?>
-    //                | <bar>
-    //                |   <d>another one value</d>
-    //                |   <foo>
-    //                |     <c>c</c>
-    //                |   </foo>
-    //                |   <e>v</e>
-    //                | </bar>
-    //              """.stripMargin.minimized)
-    //      }).runToFuture
-    //    }
+    "encode sealed traits" in {
+      @ElementCodec
+      case class Foo1(a: String) extends Foo
+      @ElementCodec
+      case class Foo2(b: Int) extends Foo
+      @ElementCodec
+      case class Foo3(c: Char) extends Foo
+      @ElementCodec
+      sealed trait Foo
+
+      @XmlCodec("bar")
+      case class Bar(d: String, foo: Foo, e: Char)
+
+      val bar1 = Bar("d value", Foo1("string"), 'e')
+      val bar2 = Bar("d value", Foo2(1), 'e')
+      val bar3 = Bar("another one value", Foo3('c'), 'v')
+
+      val xml1 = XmlEncoder[Bar].encode(bar1)
+      val xml2 = XmlEncoder[Bar].encode(bar2)
+      val xml3 = XmlEncoder[Bar].encode(bar3)
+      assert(
+        xml1 ==
+          """
+                  | <?xml version='1.0' encoding='UTF-8'?>
+                  | <bar>
+                  |   <d>d value</d>
+                  |   <foo>
+                  |     <a>string</a>
+                  |   </foo>
+                  |   <e>e</e>
+                  | </bar>
+                """.stripMargin.minimized &&
+          xml2 ==
+            """
+                    | <?xml version='1.0' encoding='UTF-8'?>
+                    | <bar>
+                    |   <d>d value</d>
+                    |   <foo>
+                    |     <b>1</b>
+                    |   </foo>
+                    |   <e>e</e>
+                    | </bar>
+                  """.stripMargin.minimized &&
+          xml3 ==
+            """
+                    | <?xml version='1.0' encoding='UTF-8'?>
+                    | <bar>
+                    |   <d>another one value</d>
+                    |   <foo>
+                    |     <c>c</c>
+                    |   </foo>
+                    |   <e>v</e>
+                    | </bar>
+                  """.stripMargin.minimized)
+    }
 
     "encode mixed content" in {
       @XmlCodec("foo")

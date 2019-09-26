@@ -12,7 +12,7 @@ class DecoderDerivation(ctx: blackbox.Context) extends Derivation(ctx) {
 
   import c.universe._
 
-  def searchType[T: c.WeakTypeTag]: Type = appliedType(c.typeOf[ElementDecoder[_]], c.weakTypeOf[T])
+  val codecType: Type = c.typeOf[ElementDecoder[_]]
 
   def deriveProductCodec[T: c.WeakTypeTag](stack: Stack[c.type])(params: IndexedSeq[CaseClassParam]): Tree = {
 
@@ -239,6 +239,8 @@ class DecoderDerivation(ctx: blackbox.Context) extends Derivation(ctx) {
       new $decoderName($decoderStateObj.New, ..${allParams.map(_.defaultValue)})
     """
   }
+
+  def deriveCoproductCodec[T: c.WeakTypeTag](subClasses: Set[SubClass]): Tree = q""
 
   def xml[T: c.WeakTypeTag](localName: Tree): Tree =
     q"""_root_.ru.tinkoff.phobos.decoding.XmlDecoder.fromElementDecoder[${weakTypeOf[T]}]($localName)(${element[T]})"""

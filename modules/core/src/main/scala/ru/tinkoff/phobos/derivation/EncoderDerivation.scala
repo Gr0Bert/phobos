@@ -11,15 +11,14 @@ class EncoderDerivation(ctx: blackbox.Context) extends Derivation(ctx) {
 
   import c.universe._
 
-  def searchType[T: c.WeakTypeTag]: Type = appliedType(c.typeOf[ElementEncoder[_]], c.weakTypeOf[T])
+  val codecType: Type = c.typeOf[ElementEncoder[_]]
 
   def deriveProductCodec[T: c.WeakTypeTag](stack: Stack[c.type])(params: IndexedSeq[CaseClassParam]): Tree = {
-    val assignedName    = TermName(c.freshName(s"ElementEncoderTypeclass")).encodedName.toTermName
+    val assignedName = TermName(c.freshName(s"ElementEncoderTypeclass")).encodedName.toTermName
 
     val classType            = c.weakTypeOf[T]
     val attributeEncoderType = typeOf[AttributeEncoder[_]]
     val textEncoderType      = typeOf[TextEncoder[_]]
-    val elementEncoderType   = typeOf[ElementEncoder[_]]
 
     val preAssignments = new ListBuffer[Tree]
 
@@ -46,12 +45,12 @@ class EncoderDerivation(ctx: blackbox.Context) extends Derivation(ctx) {
     }
 
     val encodeElements = groups.getOrElse(ParamCategory.element, Nil).map { param =>
-      val requiredImplicit = appliedType(elementEncoderType, param.paramType)
+      val requiredImplicit = appliedType(codecType, param.paramType)
       val paramName        = param.localName
       val path             = ProductType(paramName, weakTypeOf[T].toString)
-      val frame            = stack.Frame(path, appliedType(elementEncoderType, weakTypeOf[T]), assignedName)
+      val frame            = stack.Frame(path, appliedType(codecType, weakTypeOf[T]), assignedName)
       val derivedImplicit = stack.recurse(frame, requiredImplicit) {
-        typeclassTree(stack)(param.paramType, elementEncoderType)
+        typeclassTree(stack)(param.paramType, codecType)
       }
 
       val ref      = TermName(c.freshName("paramTypeclass"))
@@ -84,6 +83,35 @@ class EncoderDerivation(ctx: blackbox.Context) extends Derivation(ctx) {
     """
   }
 
+  def deriveCoproductCodec[T: c.WeakTypeTag](subClasses: Set[SubClass]): Tree = {
+    val classType = c.weakTypeOf[T]
+    val subtypes = subClasses.map { sc =>
+      q"""
+         new _root_.ru.tinkoff.phobos.derivation.SubType[$classType] {
+            type Sub = ${sc.subClassType}
+            def isSuccessorOf(base: $classType): Boolean = base.isInstanceOf[${sc.subClassType}]
+            def narrow(base: $classType): Sub = base.asInstanceOf[${sc.subClassType}]
+            val typeclass: _root_.ru.tinkoff.phobos.encoding.ElementEncoder[${sc.subClassType}] = ${sc.typeclass}
+         }
+       """
+    }
+
+    q"""
+       new _root_.ru.tinkoff.phobos.encoding.ElementEncoder[$classType] {
+       def encodeAsElement(
+         a: $classType,
+         sw: _root_.org.codehaus.stax2.XMLStreamWriter2,
+         localName: String,
+         namespaceUri: Option[String]
+       ): Unit = {
+         List(..$subtypes).collectFirst {
+            case st if st.isSuccessorOf(a) => st.typeclass.encodeAsElement(st.narrow(a), sw, localName, namespaceUri)
+         }
+       }
+     }
+     """
+  }
+
   def xml[T: c.WeakTypeTag](localName: Tree): Tree =
     q"""_root_.ru.tinkoff.phobos.encoding.XmlEncoder.fromElementEncoder[${weakTypeOf[T]}]($localName)(${element[T]})"""
 
@@ -91,6 +119,7 @@ class EncoderDerivation(ctx: blackbox.Context) extends Derivation(ctx) {
     val nsInstance = Option(c.inferImplicitValue(appliedType(weakTypeOf[Namespace[_]], weakTypeOf[NS])))
       .filter(_.nonEmpty)
       .getOrElse(error(s"Could not find Namespace instance for $ns"))
-    q"""_root_.ru.tinkoff.phobos.encoding.XmlEncoder.fromElementEncoderNs[${weakTypeOf[T]}, ${weakTypeOf[NS]}]($localName, $ns)(${element[T]}, $nsInstance)"""
+    q"""_root_.ru.tinkoff.phobos.encoding.XmlEncoder.fromElementEncoderNs[${weakTypeOf[T]}, ${weakTypeOf[NS]}]($localName, $ns)(${element[
+      T]}, $nsInstance)"""
   }
 }
